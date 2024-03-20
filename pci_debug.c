@@ -35,6 +35,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <byteswap.h>
+#include <stdint.h>
 
 /* Readline support */
 #include <readline/readline.h>
@@ -62,11 +63,11 @@ typedef struct {
 
 	/* Memory mapped resource */
 	unsigned char *maddr;
-	unsigned int   size;
-	unsigned int   offset;
+	uint64_t	size;
+	uint64_t	offset;
 
 	/* PCI physical address */
-	unsigned int   phys;
+	uint64_t	phys;
 
 	/* Address to pass to read/write (includes offset) */
 	unsigned char *addr;
@@ -88,57 +89,57 @@ static int big_endian = 0;
 static void
 write_8(
 	device_t     *dev,
-	unsigned int  addr,
+	uint64_t	addr,
 	unsigned char data);
 
 static unsigned char
 read_8(
 	device_t    *dev,
-	unsigned int addr);
+	uint64_t	addr);
 
 static void
 write_le16(
 	device_t          *dev,
-	unsigned int       addr,
+	uint64_t       addr,
 	unsigned short int data);
 
 static unsigned short int
 read_le16(
 	device_t    *dev,
-	unsigned int addr);
+	uint64_t	addr);
 
 static void
 write_be16(
 	device_t          *dev,
-	unsigned int       addr,
+	uint64_t       addr,
 	unsigned short int data);
 
 static unsigned short int
 read_be16(
 	device_t    *dev,
-	unsigned int addr);
+	uint64_t	addr);
 
 static void
 write_le32(
 	device_t    *dev,
-	unsigned int addr,
+	uint64_t       addr,
 	unsigned int data);
 
 static unsigned int
 read_le32(
 	device_t    *dev,
-	unsigned int addr);
+	uint64_t	addr);
 
 static void
 write_be32(
 	device_t    *dev,
-	unsigned int addr,
+	uint64_t       addr,
 	unsigned int data);
 
 static unsigned int
 read_be32(
 	device_t    *dev,
-	unsigned int addr);
+	uint64_t	addr);
 
 /* Usage */
 static void show_usage()
@@ -202,9 +203,9 @@ int main(int argc, char *argv[])
 	 */
 
 	/* Extract the PCI parameters from the slot string */
-	status = sscanf(slot, "%2x:%2x.%1x",
-			&dev->bus, &dev->slot, &dev->function);
-	if (status != 3) {
+	status = sscanf(slot, "%04x:%2x:%2x.%1x",
+			&dev->domain,&dev->bus, &dev->slot, &dev->function);
+	if (status != 4) {
 		printf("Error parsing slot information!\n");
 		show_usage();
 		return -1;
@@ -290,8 +291,8 @@ int main(int argc, char *argv[])
 		printf("PCI debug\n");
 		printf("---------\n\n");
 		printf(" - accessing BAR%d\n", dev->bar);
-		printf(" - region size is %d-bytes\n", dev->size);
-		printf(" - offset into region is %d-bytes\n", dev->offset);
+		printf(" - region size is %ld-bytes\n", dev->size);
+		printf(" - offset into region is %ld-bytes\n", dev->offset);
 
 		/* Display help */
 		display_help(dev);
@@ -343,7 +344,7 @@ void useCmdFile(device_t *dev, char* cmdFilePath)
 			}
 			firstLine = 0;
 		}else{
-			verbosity>=2?printf("Send: %s", line, len):0;
+			verbosity>=2?printf("Send: %s", line):0;
 			status = process_command(dev, line);
 			if (status < 0) {
 				printf("Warning: Command failure - %s", line);
@@ -407,25 +408,25 @@ display_help(
 {
 	printf("\n");
 	printf("  ?                         Help\n");
-	printf("  d[width] addr len         Display memory starting from addr\n");
+	printf("  d[width] offset len         Display memory starting from offset\n");
 	printf("                            [width]\n");
 	printf("                              8   - 8-bit access\n");
 	printf("                              16  - 16-bit access\n");
 	printf("                              32  - 32-bit access (default)\n");
-	printf("  c[width] addr val         Change memory at addr to val\n");
+	printf("  c[width] offset val         Change memory at offset to val\n");
 	printf("  e                         Print the endian access mode\n");
 	printf("  e[mode]                   Change the endian access mode\n");
 	printf("                            [mode]\n");
 	printf("                              b - big-endian (default)\n");
 	printf("                              l - little-endian\n");
-	printf("  f[width] addr val len inc  Fill memory\n");
-	printf("                              addr - start address\n");
+	printf("  f[width] offset val len inc  Fill memory\n");
+	printf("                              offset - start offset\n");
 	printf("                              val  - start value\n");
 	printf("                              len  - length (in bytes)\n");
 	printf("                              inc  - increment (defaults to 1)\n");
 	printf("  q                          Quit\n");
 	printf("\n  Notes:\n");
-	printf("    1. addr, len, and val are interpreted as hex values\n");
+	printf("    1. offset, len, and val are interpreted as hex values\n");
 	printf("       addresses are always byte based\n");
 	printf("\n");
 }
@@ -463,7 +464,7 @@ int process_command(device_t *dev, char *cmd)
 int display_mem(device_t *dev, char *cmd)
 {
 	int width = 32;
-	int addr = 0;
+	uint64_t addr = 0;
 	int len = 0;
 	int status;
 	int i;
@@ -473,22 +474,23 @@ int display_mem(device_t *dev, char *cmd)
 
 	/* d, d8, d16, d32 */
 	if (cmd[1] == ' ') {
-		status = sscanf(cmd, "%*c %x %x", &addr, &len);
+		status = sscanf(cmd, "%*c %lx %x", &addr, &len);
 		if (status != 2) {
 			printf("Syntax error (use ? for help)\n");
 			/* Don't break out of command processing loop */
 			return 0;
 		}
 	} else {
-		status = sscanf(cmd, "%*c%d %x %x", &width, &addr, &len);
+		status = sscanf(cmd, "%*c%d %lx %x", &width, &addr, &len);
 		if (status != 3) {
 			printf("Syntax error (use ? for help)\n");
 			/* Don't break out of command processing loop */
 			return 0;
 		}
+		//printf("\n====%.16X, %.16X: ", addr, len);
 	}
 	if (addr > dev->size) {
-		printf("Error: invalid address (maximum allowed is %.8X\n", dev->size);
+		printf("Error: invalid address (maximum allowed is %.16lX\n", dev->size);
 		return 0;
 	}
 	/* Length is in bytes */
@@ -500,7 +502,7 @@ int display_mem(device_t *dev, char *cmd)
 		case 8:
 			for (i = 0; i < len; i++) {
 				if ((i%16) == 0) {
-					printf("\n%.8X: ", addr+i);
+					printf("\n%.16lX: ", addr+i);
 				}
 				d8 = read_8(dev, addr+i);
 				printf("%.2X ", d8);
@@ -510,7 +512,7 @@ int display_mem(device_t *dev, char *cmd)
 		case 16:
 			for (i = 0; i < len; i+=2) {
 				if ((i%16) == 0) {
-					printf("\n%.8X: ", addr+i);
+					printf("\n%.16lX: ", addr+i);
 				}
 				if (big_endian == 0) {
 					d16 = read_le16(dev, addr+i);
@@ -522,9 +524,10 @@ int display_mem(device_t *dev, char *cmd)
 			printf("\n");
 			break;
 		case 32:
+			//printf("\n====%.16X, %.16X: ", addr, len);
 			for (i = 0; i < len; i+=4) {
 				if ((i%16) == 0) {
-					printf("\n%.8X: ", addr+i);
+					printf("\n%.16lX: ", addr+i);
 				}
 				if (big_endian == 0) {
 					d32 = read_le32(dev, addr+i);
@@ -547,7 +550,7 @@ int display_mem(device_t *dev, char *cmd)
 int change_mem(device_t *dev, char *cmd)
 {
 	int width = 32;
-	int addr = 0;
+	uint64_t addr = 0;
 	int status;
 	unsigned char d8;
 	unsigned short d16;
@@ -555,14 +558,14 @@ int change_mem(device_t *dev, char *cmd)
 
 	/* c, c8, c16, c32 */
 	if (cmd[1] == ' ') {
-		status = sscanf(cmd, "%*c %x %x", &addr, &d32);
+		status = sscanf(cmd, "%*c %lx %x", &addr, &d32);
 		if (status != 2) {
 			printf("Syntax error (use ? for help)\n");
 			/* Don't break out of command processing loop */
 			return 0;
 		}
 	} else {
-		status = sscanf(cmd, "%*c%d %x %x", &width, &addr, &d32);
+		status = sscanf(cmd, "%*c%d %lx %x", &width, &addr, &d32);
 		if (status != 3) {
 			printf("Syntax error (use ? for help)\n");
 			/* Don't break out of command processing loop */
@@ -570,7 +573,7 @@ int change_mem(device_t *dev, char *cmd)
 		}
 	}
 	if (addr > dev->size) {
-		printf("Error: invalid address (maximum allowed is %.8X\n", dev->size);
+		printf("Error: invalid address (maximum allowed is %.16lX\n", dev->size);
 		return 0;
 	}
 	switch (width) {
@@ -604,7 +607,7 @@ int change_mem(device_t *dev, char *cmd)
 int fill_mem(device_t *dev, char *cmd)
 {
 	int width = 32;
-	int addr = 0;
+	uint64_t addr = 0;
 	int len = 0;
 	int inc = 0;
 	int status;
@@ -615,7 +618,7 @@ int fill_mem(device_t *dev, char *cmd)
 
 	/* c, c8, c16, c32 */
 	if (cmd[1] == ' ') {
-		status = sscanf(cmd, "%*c %x %x %x %x", &addr, &d32, &len, &inc);
+		status = sscanf(cmd, "%*c %lx %x %x %x", &addr, &d32, &len, &inc);
 		if ((status != 3) && (status != 4)) {
 			printf("Syntax error (use ? for help)\n");
 			/* Don't break out of command processing loop */
@@ -625,7 +628,7 @@ int fill_mem(device_t *dev, char *cmd)
 			inc = 1;
 		}
 	} else {
-		status = sscanf(cmd, "%*c%d %x %x %x %x", &width, &addr, &d32, &len, &inc);
+		status = sscanf(cmd, "%*c%d %lx %x %x %x", &width, &addr, &d32, &len, &inc);
 		if ((status != 3) && (status != 4)) {
 			printf("Syntax error (use ? for help)\n");
 			/* Don't break out of command processing loop */
@@ -636,7 +639,7 @@ int fill_mem(device_t *dev, char *cmd)
 		}
 	}
 	if (addr > dev->size) {
-		printf("Error: invalid address (maximum allowed is %.8X\n", dev->size);
+		printf("Error: invalid address (maximum allowed is %.16lX\n", dev->size);
 		return 0;
 	}
 	/* Length is in bytes */
@@ -720,7 +723,7 @@ int change_endian(device_t *dev, char *cmd)
 static void
 write_8(
 	device_t      *dev,
-	unsigned int   addr,
+	uint64_t addr,
 	unsigned char  data)
 {
 	*(volatile unsigned char *)(dev->addr + addr) = data;
@@ -730,7 +733,7 @@ write_8(
 static unsigned char
 read_8(
 	device_t      *dev,
-	unsigned int   addr)
+	uint64_t    addr)
 {
 	return *(volatile unsigned char *)(dev->addr + addr);
 }
@@ -738,7 +741,7 @@ read_8(
 static void
 write_le16(
 	device_t      *dev,
-	unsigned int   addr,
+	uint64_t addr,
 	unsigned short int data)
 {
 	if (__BYTE_ORDER != __LITTLE_ENDIAN) {
@@ -751,7 +754,7 @@ write_le16(
 static unsigned short int
 read_le16(
 	device_t      *dev,
-	unsigned int   addr)
+	uint64_t    addr)
 {
 	unsigned int data = *(volatile unsigned short int *)(dev->addr + addr);
 	if (__BYTE_ORDER != __LITTLE_ENDIAN) {
@@ -763,7 +766,7 @@ read_le16(
 static void
 write_be16(
 	device_t      *dev,
-	unsigned int   addr,
+	uint64_t addr,
 	unsigned short int data)
 {
 	if (__BYTE_ORDER == __LITTLE_ENDIAN) {
@@ -776,7 +779,7 @@ write_be16(
 static unsigned short int
 read_be16(
 	device_t      *dev,
-	unsigned int   addr)
+	uint64_t    addr)
 {
 	unsigned int data = *(volatile unsigned short int *)(dev->addr + addr);
 	if (__BYTE_ORDER == __LITTLE_ENDIAN) {
@@ -788,22 +791,24 @@ read_be16(
 static void
 write_le32(
 	device_t      *dev,
-	unsigned int   addr,
+	uint64_t addr,
 	unsigned int data)
 {
 	if (__BYTE_ORDER != __LITTLE_ENDIAN) {
 		data = bswap_32(data);
 	}
-	*(volatile unsigned int *)(dev->addr + addr) = data;
+	*(volatile unsigned int *)(dev->maddr + addr) = data;
 	msync((void *)(dev->addr + addr), 4, MS_SYNC | MS_INVALIDATE);
 }
 
 static unsigned int
 read_le32(
 	device_t      *dev,
-	unsigned int   addr)
+	uint64_t    addr)
 {
-	unsigned int data = *(volatile unsigned int *)(dev->addr + addr);
+
+	//printf("\n=== dev->maddr %lx addr %lx",dev->maddr, addr);
+	unsigned int data = *(volatile unsigned int *)(dev->maddr + addr);
 	if (__BYTE_ORDER != __LITTLE_ENDIAN) {
 		data = bswap_32(data);
 	}
@@ -813,7 +818,7 @@ read_le32(
 static void
 write_be32(
 	device_t      *dev,
-	unsigned int   addr,
+	uint64_t addr,
 	unsigned int data)
 {
 	if (__BYTE_ORDER == __LITTLE_ENDIAN) {
@@ -826,7 +831,7 @@ write_be32(
 static unsigned int
 read_be32(
 	device_t      *dev,
-	unsigned int   addr)
+	uint64_t    addr)
 {
 	unsigned int data = *(volatile unsigned int *)(dev->addr + addr);
 	if (__BYTE_ORDER == __LITTLE_ENDIAN) {
